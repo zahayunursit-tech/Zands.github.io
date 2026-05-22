@@ -1,0 +1,267 @@
+ <!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> animals card- neon pastel + Audio</title>
+    <style>
+        /* --- CSS STYLING --- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: #0d1117;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            color: #fecdd3;
+            text-shadow: 0 0 10px #fecdd3;
+            font-size: 1.8rem;
+        }
+
+        .score-board {
+            margin-bottom: 20px;
+            font-size: 1.1rem;
+            color: #bae6fd;
+            text-shadow: 0 0 5px #bae6fd;
+        }
+
+        .game-container {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            width: 100%;
+            max-width: 400px;
+            perspective: 1000px;
+        }
+
+        .card {
+            aspect-ratio: 1 / 1;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.5s;
+            cursor: pointer;
+        }
+
+        .card.flipped {
+            transform: rotateY(180deg);
+        }
+
+        .card-front, .card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+        }
+
+        .card-back {
+            background-color: #000000;
+            border: 2px solid #e9d5ff;
+            box-shadow: 0 0 8px #e9d5ff;
+        }
+
+        .card-back::after {
+            content: "?";
+            color: #e9d5ff;
+            font-weight: bold;
+        }
+
+        .card-front {
+            background-color: #111827;
+            border: 2px solid #00ffcc;
+            box-shadow: 0 0 8px #00ffcc;
+            transform: rotateY(180deg);
+        }
+
+        .reset-btn {
+            margin-top: 25px;
+            padding: 10px 20px;
+            background-color: transparent;
+            color: #ffedd5;
+            border: 2px solid #ffedd5;
+            box-shadow: 0 0 8px #ffedd5;
+            border-radius: 5px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .reset-btn:active {
+            background-color: #fecdd3;
+            color: #0d1117;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>animals</h1>
+    <div class="score-board">Percobaan: <span id="flips">0</span></div>
+
+    <div class="game-container" id="game-board"></div>
+
+    <button class="reset-btn" onclick="resetGame()">Main Lagi</button>
+
+    <script>
+        // --- JAVASCRIPT LOGIC ---
+        const board = document.getElementById('game-board');
+        const flipsCount = document.getElementById('flips');
+        
+        const cardIcons = ['🐬','🦭', '🪼', '🦑', '🦈', '🫍', '🐙', '🐋',]
+        let cardsArray = [...cardIcons, ...cardIcons];
+        
+        let flippedCards = [];
+        let lockBoard = false;
+        let totalFlips = 0;
+
+        // --- EFEK SUARA SYNTESIZER (Web Audio API) ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(type) {
+            // Memastikan audio context aktif (kebijakan browser modern)
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            if (type === 'click') {
+                // Suara klik pendek ber-nada tinggi
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.1);
+            } 
+            else if (type === 'match') {
+                // Suara sukses (dua nada naik yang ceria)
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+                osc.frequency.setValueAtTime(900, audioCtx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.3);
+            } 
+            else if (type === 'wrong') {
+                // Suara salah (nada rendah yang turun)
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+                osc.frequency.linearRampToValueAtTime(80, audioCtx.currentTime + 0.2);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.25);
+            }
+        }
+
+        // --- GAME LOGIC ---
+        function shuffle(array) {
+            return array.sort(() => Math.random() - 0.5);
+        }
+
+        function createBoard() {
+            board.innerHTML = '';
+            const shuffledCards = shuffle(cardsArray);
+            
+            shuffledCards.forEach((icon) => {
+                const card = document.createElement('div');
+                card.classList.add('card');
+                card.dataset.icon = icon;
+
+                card.innerHTML = `
+                    <div class="card-front">${icon}</div>
+                    <div class="card-back"></div>
+                `;
+
+                card.addEventListener('click', flipCard);
+                board.appendChild(card);
+            });
+        }
+
+        function flipCard() {
+            if (lockBoard) return;
+            if (this === flippedCards[0]) return;
+
+            // Mainan suara klik saat kartu dipilih
+            playSound('click');
+
+            this.classList.add('flipped');
+            flippedCards.push(this);
+
+            if (flippedCards.length === 2) {
+                totalFlips++;
+                flipsCount.textContent = totalFlips;
+                checkMatch();
+            }
+        }
+
+        function checkMatch() {
+            let isMatch = flippedCards[0].dataset.icon === flippedCards[1].dataset.icon;
+
+            if (isMatch) {
+                // Mainkan suara kartu COCOK
+                setTimeout(() => playSound('match'), 200);
+                disableCards();
+            } else {
+                // Mainkan suara kartu SALAH
+                setTimeout(() => playSound('wrong'), 300);
+                unflipCards();
+            }
+        }
+
+        function disableCards() {
+            flippedCards[0].removeEventListener('click', flipCard);
+            flippedCards[1].removeEventListener('click', flipCard);
+            resetTurn();
+        }
+
+        function unflipCards() {
+            lockBoard = true;
+            setTimeout(() => {
+                flippedCards[0].classList.remove('flipped');
+                flippedCards[1].classList.remove('flipped');
+                resetTurn();
+            }, 1000);
+        }
+
+        function resetTurn() {
+            flippedCards = [];
+            lockBoard = false;
+        }
+
+        function resetGame() {
+            playSound('click');
+            totalFlips = 0;
+            flipsCount.textContent = totalFlips;
+            flippedCards = [];
+            lockBoard = false;
+            createBoard();
+        }
+
+        createBoard();
+    </script>
+</body>
+</html>
